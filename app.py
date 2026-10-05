@@ -1,8 +1,3 @@
-import streamlit as st
-import requests
-import re
-from bs4 import BeautifulSoup
-
 st.set_page_config(page_title="Gerador de Ofertas - Bot", page_icon="🔥", layout="centered")
 
 def extrair_dados_nuvem(url):
