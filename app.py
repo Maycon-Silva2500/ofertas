@@ -1,69 +1,84 @@
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
+import requests
+import re
 from bs4 import BeautifulSoup
-import time
 
 st.set_page_config(page_title="Gerador de Ofertas - Bot", page_icon="🔥", layout="centered")
 
-def extrair_com_chrome_real(url):
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless")  # Roda de forma invisível
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+def extrair_dados_nuvem(url):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept-Language": "pt-BR,pt;q=0.9"
+    }
     
-    driver = None
     try:
-        # Usa o Chrome que já está instalado no seu computador automaticamente
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
-        
-        driver.get(url)
-        time.sleep(3) # Aguarda o JavaScript renderizar a página e os preços
-        
-        html_content = driver.page_source
-        driver.quit()
-        
-        soup = BeautifulSoup(html_content, 'html.parser')
+        resposta = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        url_final = resposta.url
+        html = resposta.text
 
         nome = ""
         preco_at = ""
         preco_ant = ""
 
-        # 1. Pega o Nome do Produto
-        h1 = soup.find("h1")
-        if h1:
-            nome = h1.text.strip()
-        else:
-            meta = soup.find("meta", property="og:title")
-            if meta:
-                nome = meta.get("content", "").split(" - ")[0].strip()
+        # Tenta extrair via código MLB/MLBU se houver no link ou texto
+        match = re.search(r'(MLB[A-Z]*\d+)', url_final + " " + html, re.IGNORECASE)
+        if match:
+            item_id = match.group(1).upper()
+            try:
+                api_prod = requests.get(f"https://api.mercadolibre.com/products/{item_id}", timeout=5).json()
+                if "name" in api_prod:
+                    nome = api_prod.get("name", "")
+                    winner = api_prod.get("buy_box_winner", {})
+                    if winner:
+                        preco_at = str(winner.get("price", ""))
+                        preco_ant = str(winner.get("original_price", ""))
+            except:
+                pass
+            
+            if not nome:
+                try:
+                    api_item = requests.get(f"https://api.mercadolibre.com/items/{item_id}", timeout=5).json()
+                    if "title" in api_item:
+                        nome = api_item.get("title", "")
+                        preco_at = str(api_item.get("price", ""))
+                        preco_ant = str(api_item.get("original_price", ""))
+                except:
+                    pass
 
-        # 2. Pega o Preço Antigo (Riscado)
-        tag_riscada = soup.find("s")
-        if tag_riscada:
-            fracao_antiga = tag_riscada.find(class_=lambda c: c and "fraction" in c)
-            if fracao_antiga:
-                preco_ant = fracao_antiga.text.strip()
+        # Fallback de Leitura HTML caso a API não traga tudo
+        if not nome or not preco_at:
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            if not nome:
+                h1 = soup.find("h1")
+                if h1:
+                    nome = h1.text.strip()
+                else:
+                    meta = soup.find("meta", property="og:title")
+                    if meta:
+                        nome = meta.get("content", "").split(" - ")[0].split(" | ")[0].strip()
 
-        # 3. Pega o Preço Atual (Não riscado)
-        fracoes = soup.find_all(class_=lambda c: c and "fraction" in c)
-        for f in fracoes:
-            if not f.find_parent("s"):
-                preco_at = f.text.strip()
-                break
+            if not preco_ant:
+                tag_riscada = soup.find("s")
+                if tag_riscada:
+                    fracao_antiga = tag_riscada.find(class_=lambda c: c and "fraction" in c)
+                    if fracao_antiga:
+                        preco_ant = fracao_antiga.text.strip()
 
-        # Formatação para reais
+            if not preco_at:
+                fracoes = soup.find_all(class_=lambda c: c and "fraction" in c)
+                for f in fracoes:
+                    if not f.find_parent("s"):
+                        preco_at = f.text.strip()
+                        break
+
+        # Formatação de preços para o padrão brasileiro (R$)
         try:
             if preco_at and preco_at != "None":
                 preco_at = f"{float(preco_at.replace('.', '').replace(',', '.')):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         except:
             pass
-
+            
         try:
             if preco_ant and preco_ant != "None":
                 preco_ant = f"{float(preco_ant.replace('.', '').replace(',', '.')):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -74,12 +89,7 @@ def extrair_com_chrome_real(url):
 
         return nome, preco_at, preco_ant
 
-    except Exception as e:
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
+    except Exception:
         return None, None, None
 
 def gerar_texto_whatsapp(nome, preco_atual, preco_antigo, link):
@@ -97,21 +107,21 @@ def gerar_texto_whatsapp(nome, preco_atual, preco_antigo, link):
     return texto
 
 # --- INTERFACE GRÁFICA ---
-st.title("🔥 Bot de Ofertas com Chrome Real")
-st.write("Cole o seu link curto de afiliado. O robô utiliza o seu próprio navegador Google Chrome para ler o produto!")
+st.title("🔥 Bot de Ofertas para Celular")
+st.write("Cole o seu link de afiliado. O app busca o nome e os preços instantaneamente!")
 
 if "nome_prod" not in st.session_state: st.session_state.nome_prod = ""
 if "preco_at" not in st.session_state: st.session_state.preco_at = ""
 if "preco_ant" not in st.session_state: st.session_state.preco_ant = ""
 if "link_prod" not in st.session_state: st.session_state.link_prod = ""
 
-link_input = st.text_input("🔗 Cole o Link de Afiliado:", placeholder="https://meli.la/...")
+link_input = st.text_input("🔗 Cole o Link de Afiliado (ex: https://meli.la/...):", placeholder="https://meli.la/...")
 
 col_b1, col_b2 = st.columns(2)
 with col_b1:
-    btn_buscar = st.button("🤖 Puxar Dados com Chrome", type="primary", use_container_width=True)
+    btn_buscar = st.button("🤖 Puxar Dados", type="primary", use_container_width=True)
 with col_b2:
-    btn_limpar = st.button("🧹 Limpar Dados", use_container_width=True)
+    btn_limpar = st.button("🧹 Limpar", use_container_width=True)
 
 if btn_limpar:
     st.session_state.nome_prod = ""
@@ -122,17 +132,17 @@ if btn_limpar:
 
 if btn_buscar:
     if link_input:
-        with st.spinner("🚗 A abrir o motor do Google Chrome para ler o produto..."):
-            nome, atual, antigo = extrair_com_chrome_real(link_input)
+        with st.spinner("A consultar servidores..."):
+            nome, atual, antigo = extrair_dados_nuvem(link_input)
             
             if nome or atual:
                 st.session_state.link_prod = link_input
                 st.session_state.nome_prod = nome
                 st.session_state.preco_at = atual
                 st.session_state.preco_ant = antigo
-                st.success("✅ Dados extraídos com sucesso pelo Chrome!")
+                st.success("✅ Dados extraídos com sucesso!")
             else:
-                st.error("Não foi possível carregar a página. Verifique se o link está correto.")
+                st.error("Não foi possível puxar automaticamente. Preencha os campos abaixo.")
     else:
         st.warning("Cole o link antes de efetuar a busca.")
 
