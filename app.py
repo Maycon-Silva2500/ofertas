@@ -4,7 +4,7 @@ import re
 from urllib.parse import quote
 from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Fanatics Ofertas - Bot", page_icon="🔥", layout="centered")
+st.set_page_config(page_title="Bot Das Ofertas", page_icon="🔥", layout="centered")
 
 def extrair_dados_nuvem(url):
     headers = {
@@ -108,7 +108,7 @@ def gerar_texto_whatsapp(nome, preco_atual, preco_antigo, link):
     return texto
 
 # --- INTERFACE GRÁFICA ---
-st.title("🔥 Fanatics Ofertas")
+st.title("🔥 Bot Das Ofertas")
 st.write("Cole o seu link de afiliado. O bot puxa os dados e cria o texto para partilhar!")
 
 if "nome_prod" not in st.session_state: st.session_state.nome_prod = ""
