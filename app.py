@@ -1,9 +1,10 @@
 import streamlit as st
 import requests
 import re
+from urllib.parse import quote
 from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Gerador de Ofertas - Bot", page_icon="🔥", layout="centered")
+st.set_page_config(page_title="Fanatics Ofertas - Bot", page_icon="🔥", layout="centered")
 
 def extrair_dados_nuvem(url):
     headers = {
@@ -107,8 +108,8 @@ def gerar_texto_whatsapp(nome, preco_atual, preco_antigo, link):
     return texto
 
 # --- INTERFACE GRÁFICA ---
-st.title("🔥 Bot de Ofertas para Celular")
-st.write("Cole o seu link de afiliado. O app busca o nome e os preços instantaneamente!")
+st.title("🔥 Fanatics Ofertas")
+st.write("Cole o seu link de afiliado. O bot puxa os dados e cria o texto para partilhar!")
 
 if "nome_prod" not in st.session_state: st.session_state.nome_prod = ""
 if "preco_at" not in st.session_state: st.session_state.preco_at = ""
@@ -158,14 +159,32 @@ if st.session_state.nome_prod or st.session_state.preco_at:
     with col2:
         st.session_state.preco_ant = st.text_input("Preço Antigo", value=st.session_state.preco_ant)
 
-    if st.button("✨ GERAR TEXTO PARA O WHATSAPP", type="primary", use_container_width=True):
-        oferta_final = gerar_texto_whatsapp(
+    if st.button("✨ GERAR TEXTO DA OFERTA", type="primary", use_container_width=True):
+        st.session_state.oferta_gerada = gerar_texto_whatsapp(
             st.session_state.nome_prod,
             st.session_state.preco_at,
             st.session_state.preco_ant,
             st.session_state.link_prod
         )
-        
-        st.divider()
-        st.subheader("📱 Copie a Oferta Abaixo")
-        st.code(oferta_final, language="text")
+
+# Se já gerou a oferta, mostra a caixa de texto e o botão direto para o WhatsApp
+if "oferta_gerada" in st.session_state and st.session_state.oferta_gerada:
+    st.divider()
+    st.subheader("📱 Oferta Pronta para Partilhar")
+    st.code(st.session_state.oferta_gerada, language="text")
+    
+    # Prepara o link codificado para o botão oficial do WhatsApp
+    texto_encoded = quote(st.session_state.oferta_gerada)
+    whatsapp_url = f"https://api.whatsapp.com/send?text={texto_encoded}"
+    
+    # Botão visual com link direto (Abre o WhatsApp automaticamente)
+    st.markdown(
+        f"""
+        <a href="{whatsapp_url}" target="_blank" style="text-decoration: none;">
+            <div style="background-color: #25D366; color: white; padding: 12px 20px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 16px;">
+                🚀 PARTILHAR DIRETAMENTE NO WHATSAPP
+            </div>
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
